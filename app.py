@@ -285,39 +285,53 @@ with tab3:
         plt.close(fig_pca)
 
         st.subheader("Visualisasi Kluster dengan t-SNE")
+        tsne_perplexity = 30
+        tsne_n_iter = 300
+
         if scaled_features_for_viz.shape[0] > 5000:
             st.warning("t-SNE dapat memakan waktu lama untuk dataset besar. Menampilkan visualisasi t-SNE mungkin lambat.")
         
+        # Debug prints to understand data state right before TSNE
+        st.write(f"TSNE Debug: Shape of scaled_features_for_viz: {scaled_features_for_viz.shape}")
+        st.write(f"TSNE Debug: Is scaled_features_for_viz finite? {np.all(np.isfinite(scaled_features_for_viz))}")
+        st.write(f"TSNE Debug: Data type of scaled_features_for_viz: {scaled_features_for_viz.dtype}")
+
         # Cek apakah data cukup besar untuk t-SNE agar tidak error dengan perplexity
-        if scaled_features_for_viz.shape[0] > 1 and scaled_features_for_viz.shape[0] > 3 * 30: # 3 * perplexity
-            tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=300) 
-            tsne_components = tsne.fit_transform(scaled_features_for_viz)
-            df_tsne = pd.DataFrame(data=tsne_components, columns=['TSNE1', 'TSNE2'], index=df_cluster.index)
-            df_tsne['Cluster'] = df_cluster['Cluster']
-            df_tsne['Season'] = df_cluster['Season']
+        # perplexity must be less than the number of samples, and also > 1.
+        # TSNE requires n_samples > perplexity. The minimum number of samples for TSNE is 2.
+        if scaled_features_for_viz.shape[0] > 1 and scaled_features_for_viz.shape[0] > tsne_perplexity:
+            try:
+                tsne = TSNE(n_components=2, random_state=42, perplexity=tsne_perplexity, n_iter=tsne_n_iter) 
+                tsne_components = tsne.fit_transform(scaled_features_for_viz)
+                df_tsne = pd.DataFrame(data=tsne_components, columns=['TSNE1', 'TSNE2'], index=df_cluster.index)
+                df_tsne['Cluster'] = df_cluster['Cluster']
+                df_tsne['Season'] = df_cluster['Season']
 
-            fig_tsne_cluster, ax_tsne_cluster = plt.subplots(figsize=(10, 7))
-            sns.scatterplot(x='TSNE1', y='TSNE2', hue='Cluster', palette='viridis', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_cluster)
-            ax_tsne_cluster.set_title('K-Means Clusters Visualized with t-SNE')
-            ax_tsne_cluster.set_xlabel('t-SNE Component 1')
-            ax_tsne_cluster.set_ylabel('t-SNE Component 2')
-            ax_tsne_cluster.legend(title='Cluster')
-            ax_tsne_cluster.grid(True)
-            st.pyplot(fig_tsne_cluster)
-            plt.close(fig_tsne_cluster)
+                fig_tsne_cluster, ax_tsne_cluster = plt.subplots(figsize=(10, 7))
+                sns.scatterplot(x='TSNE1', y='TSNE2', hue='Cluster', palette='viridis', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_cluster)
+                ax_tsne_cluster.set_title('K-Means Clusters Visualized with t-SNE')
+                ax_tsne_cluster.set_xlabel('t-SNE Component 1')
+                ax_tsne_cluster.set_ylabel('t-SNE Component 2')
+                ax_tsne_cluster.legend(title='Cluster')
+                ax_tsne_cluster.grid(True)
+                st.pyplot(fig_tsne_cluster)
+                plt.close(fig_tsne_cluster)
 
-            st.subheader("Visualisasi Musim Asli dengan t-SNE (Untuk Perbandingan)")
-            fig_tsne_season, ax_tsne_season = plt.subplots(figsize=(10, 7))
-            sns.scatterplot(x='TSNE1', y='TSNE2', hue='Season', palette='tab10', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_season)
-            ax_tsne_season.set_title('Original Season Visualized with t-SNE')
-            ax_tsne_season.set_xlabel('t-SNE Component 1')
-            ax_tsne_season.set_ylabel('t-SNE Component 2')
-            ax_tsne_season.legend(title='Season')
-            ax_tsne_season.grid(True)
-            st.pyplot(fig_tsne_season)
-            plt.close(fig_tsne_season)
+                st.subheader("Visualisasi Musim Asli dengan t-SNE (Untuk Perbandingan)")
+                fig_tsne_season, ax_tsne_season = plt.subplots(figsize=(10, 7))
+                sns.scatterplot(x='TSNE1', y='TSNE2', hue='Season', palette='tab10', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_season)
+                ax_tsne_season.set_title('Original Season Visualized with t-SNE')
+                ax_tsne_season.set_xlabel('t-SNE Component 1')
+                ax_tsne_season.set_ylabel('t-SNE Component 2')
+                ax_tsne_season.legend(title='Season')
+                ax_tsne_season.grid(True)
+                st.pyplot(fig_tsne_season)
+                plt.close(fig_tsne_season)
+            except Exception as e:
+                st.error(f"Terjadi error saat membuat visualisasi t-SNE: {e}. Pastikan data valid dan cukup besar.")
+                st.info("Cek log Streamlit Cloud untuk detail error lengkap. (Klik 'Manage app' di aplikasi Anda)")
         else:
-            st.warning("Data terlalu kecil untuk visualisasi t-SNE.")
+            st.warning(f"Data terlalu kecil ({scaled_features_for_viz.shape[0]} sampel) atau tidak valid untuk visualisasi t-SNE dengan perplexity {tsne_perplexity}. Diperlukan setidaknya lebih dari {tsne_perplexity} sampel.")
 
     else:
         st.warning("Data kluster atau model K-Means/scaler tidak dapat dimuat. Pastikan file ada.")
