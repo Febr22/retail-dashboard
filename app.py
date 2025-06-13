@@ -7,9 +7,11 @@ import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans # Import KMeans for Elbow Method
 
-
+# Set Streamlit page config - INI HARUS DI POSISI PALING ATAS
 st.set_page_config(layout="wide", page_title="Dashboard Analisis Transaksi Ritel")
+
 # Fungsi untuk memuat data dan model
 @st.cache_data
 def load_data():
@@ -56,9 +58,6 @@ df_main = load_data()
 df_cluster = load_cluster_data()
 model_pembayaran, scaler_model = load_prediction_model()
 kmeans_model, scaler_kmeans = load_segmentation_model()
-
-# Set Streamlit page config
-
 
 st.title("Dashboard Analisis Transaksi Ritel")
 
@@ -152,10 +151,10 @@ with tab2:
             # Fill numerical features
             input_data['Total_Items'] = total_items
             input_data['Total_Cost'] = total_cost
-            input_data['Discount_Applied'] = bool(discount_applied) # Ensure boolean type
+            input_data['Discount_Applied'] = float(discount_applied) # Ensure boolean type
             input_data['day_of_week'] = day_of_week
             input_data['month'] = month
-            input_data['is_weekend'] = bool(is_weekend) # Ensure boolean type
+            input_data['is_weekend'] = float(is_weekend) # Ensure boolean type
             input_data['average_item_cost'] = average_item_cost
 
             # Fill OHE features by setting the selected one to 1.0 (True)
@@ -194,6 +193,9 @@ with tab3:
 
         st.subheader("Distribusi Musim di Setiap Cluster")
         df_cluster_season = df_cluster.groupby('Cluster')['Season'].value_counts(normalize=True).unstack(fill_value=0)
+        # Menampilkan DataFrame distribusi musim
+        st.dataframe(df_cluster_season) # <--- PENAMBAHAN BARU
+        
         fig_season, ax_season = plt.subplots(figsize=(12, 7))
         df_cluster_season.plot(kind='bar', stacked=True, colormap='viridis', ax=ax_season)
         ax_season.set_title('Distribution of Season within Each Cluster')
@@ -217,6 +219,37 @@ with tab3:
         features_for_kmeans_scaling_data = df_cluster[features_for_kmeans_scaling_cols]
         scaled_features_for_viz = scaler_kmeans.transform(features_for_kmeans_scaling_data)
 
+        # --- PENAMBAHAN BARU: Visualisasi Elbow Method ---
+        st.subheader("Visualisasi Elbow Method untuk Penentuan Jumlah Kluster Optimal")
+        
+        # Menghitung inersia untuk berbagai jumlah kluster
+        # Menggunakan data yang telah discale dan digunakan untuk visualisasi
+        inertias = []
+        # Pilih rentang K yang masuk akal, misalnya 1 hingga 10 atau 15
+        K_range = range(1, 11) 
+        
+        # Pastikan scaled_features_for_viz tidak kosong
+        if not np.any(np.isnan(scaled_features_for_viz)): # Cek NaN setelah scaling
+            for k in K_range:
+                # Inisialisasi KMeans dengan random_state untuk reproduktibilitas
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10) # Tambah n_init
+                kmeans.fit(scaled_features_for_viz)
+                inertias.append(kmeans.inertia_)
+
+            # Membuat plot Elbow Method
+            fig_elbow, ax_elbow = plt.subplots(figsize=(10, 6))
+            ax_elbow.plot(K_range, inertias, marker='o')
+            ax_elbow.set_title('Elbow Method untuk Penentuan Jumlah Kluster Optimal')
+            ax_elbow.set_xlabel('Jumlah Kluster (K)')
+            ax_elbow.set_ylabel('Inersia (Sum of Squared Distances)')
+            ax_elbow.grid(True)
+            st.pyplot(fig_elbow)
+            plt.close(fig_elbow)
+        else:
+            st.warning("Data untuk Elbow Method mengandung nilai NaN atau kosong setelah scaling. Tidak dapat menampilkan grafik.")
+        # --- AKHIR PENAMBAHAN BARU ---
+
+
         st.subheader("Visualisasi Kluster dengan PCA")
         pca = PCA(n_components=2, random_state=42)
         pca_components = pca.fit_transform(scaled_features_for_viz)
@@ -238,32 +271,36 @@ with tab3:
         if scaled_features_for_viz.shape[0] > 5000:
             st.warning("t-SNE dapat memakan waktu lama untuk dataset besar. Menampilkan visualisasi t-SNE mungkin lambat.")
         
-        tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=300) 
-        tsne_components = tsne.fit_transform(scaled_features_for_viz)
-        df_tsne = pd.DataFrame(data=tsne_components, columns=['TSNE1', 'TSNE2'], index=df_cluster.index)
-        df_tsne['Cluster'] = df_cluster['Cluster']
-        df_tsne['Season'] = df_cluster['Season']
+        # Cek apakah data cukup besar untuk t-SNE agar tidak error dengan perplexity
+        if scaled_features_for_viz.shape[0] > 1 and scaled_features_for_viz.shape[0] > 3 * 30: # 3 * perplexity
+            tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=300) 
+            tsne_components = tsne.fit_transform(scaled_features_for_viz)
+            df_tsne = pd.DataFrame(data=tsne_components, columns=['TSNE1', 'TSNE2'], index=df_cluster.index)
+            df_tsne['Cluster'] = df_cluster['Cluster']
+            df_tsne['Season'] = df_cluster['Season']
 
-        fig_tsne_cluster, ax_tsne_cluster = plt.subplots(figsize=(10, 7))
-        sns.scatterplot(x='TSNE1', y='TSNE2', hue='Cluster', palette='viridis', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_cluster)
-        ax_tsne_cluster.set_title('K-Means Clusters Visualized with t-SNE')
-        ax_tsne_cluster.set_xlabel('t-SNE Component 1')
-        ax_tsne_cluster.set_ylabel('t-SNE Component 2')
-        ax_tsne_cluster.legend(title='Cluster')
-        ax_tsne_cluster.grid(True)
-        st.pyplot(fig_tsne_cluster)
-        plt.close(fig_tsne_cluster)
+            fig_tsne_cluster, ax_tsne_cluster = plt.subplots(figsize=(10, 7))
+            sns.scatterplot(x='TSNE1', y='TSNE2', hue='Cluster', palette='viridis', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_cluster)
+            ax_tsne_cluster.set_title('K-Means Clusters Visualized with t-SNE')
+            ax_tsne_cluster.set_xlabel('t-SNE Component 1')
+            ax_tsne_cluster.set_ylabel('t-SNE Component 2')
+            ax_tsne_cluster.legend(title='Cluster')
+            ax_tsne_cluster.grid(True)
+            st.pyplot(fig_tsne_cluster)
+            plt.close(fig_tsne_cluster)
 
-        st.subheader("Visualisasi Musim Asli dengan t-SNE (Untuk Perbandingan)")
-        fig_tsne_season, ax_tsne_season = plt.subplots(figsize=(10, 7))
-        sns.scatterplot(x='TSNE1', y='TSNE2', hue='Season', palette='tab10', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_season)
-        ax_tsne_season.set_title('Original Season Visualized with t-SNE')
-        ax_tsne_season.set_xlabel('t-SNE Component 1')
-        ax_tsne_season.set_ylabel('t-SNE Component 2')
-        ax_tsne_season.legend(title='Season')
-        ax_tsne_season.grid(True)
-        st.pyplot(fig_tsne_season)
-        plt.close(fig_tsne_season)
+            st.subheader("Visualisasi Musim Asli dengan t-SNE (Untuk Perbandingan)")
+            fig_tsne_season, ax_tsne_season = plt.subplots(figsize=(10, 7))
+            sns.scatterplot(x='TSNE1', y='TSNE2', hue='Season', palette='tab10', data=df_tsne, s=100, alpha=0.7, ax=ax_tsne_season)
+            ax_tsne_season.set_title('Original Season Visualized with t-SNE')
+            ax_tsne_season.set_xlabel('t-SNE Component 1')
+            ax_tsne_season.set_ylabel('t-SNE Component 2')
+            ax_tsne_season.legend(title='Season')
+            ax_tsne_season.grid(True)
+            st.pyplot(fig_tsne_season)
+            plt.close(fig_tsne_season)
+        else:
+            st.warning("Data terlalu kecil untuk visualisasi t-SNE.")
 
     else:
         st.warning("Data kluster atau model K-Means/scaler tidak dapat dimuat. Pastikan file ada.")
