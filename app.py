@@ -194,7 +194,7 @@ with tab3:
         st.subheader("Distribusi Musim di Setiap Cluster")
         df_cluster_season = df_cluster.groupby('Cluster')['Season'].value_counts(normalize=True).unstack(fill_value=0)
         # Menampilkan DataFrame distribusi musim
-        st.dataframe(df_cluster_season) # <--- PENAMBAHAN BARU
+        st.dataframe(df_cluster_season) 
         
         fig_season, ax_season = plt.subplots(figsize=(12, 7))
         df_cluster_season.plot(kind='bar', stacked=True, colormap='viridis', ax=ax_season)
@@ -225,28 +225,45 @@ with tab3:
         # Menghitung inersia untuk berbagai jumlah kluster
         # Menggunakan data yang telah discale dan digunakan untuk visualisasi
         inertias = []
-        # Pilih rentang K yang masuk akal, misalnya 1 hingga 10 atau 15
-        K_range = range(1, 11) 
-        
-        # Pastikan scaled_features_for_viz tidak kosong
-        if not np.any(np.isnan(scaled_features_for_viz)): # Cek NaN setelah scaling
-            for k in K_range:
-                # Inisialisasi KMeans dengan random_state untuk reproduktibilitas
-                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10) # Tambah n_init
-                kmeans.fit(scaled_features_for_viz)
-                inertias.append(kmeans.inertia_)
+        # Batasi K_range berdasarkan jumlah sampel data
+        max_k = min(scaled_features_for_viz.shape[0], 10) 
+        K_range = range(1, max_k + 1) # Jika data kurang dari 10 sampel, K_range akan disesuaikan
 
-            # Membuat plot Elbow Method
-            fig_elbow, ax_elbow = plt.subplots(figsize=(10, 6))
-            ax_elbow.plot(K_range, inertias, marker='o')
-            ax_elbow.set_title('Elbow Method untuk Penentuan Jumlah Kluster Optimal')
-            ax_elbow.set_xlabel('Jumlah Kluster (K)')
-            ax_elbow.set_ylabel('Inersia (Sum of Squared Distances)')
-            ax_elbow.grid(True)
-            st.pyplot(fig_elbow)
-            plt.close(fig_elbow)
+        # Pastikan scaled_features_for_viz tidak kosong dan tidak mengandung NaN
+        if scaled_features_for_viz.shape[0] > 0 and not np.any(np.isnan(scaled_features_for_viz)):
+            for k in K_range:
+                try:
+                    # Inisialisasi KMeans dengan random_state untuk reproduktibilitas
+                    # n_init='auto' adalah opsi yang lebih baru dan disarankan
+                    kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto') 
+                    kmeans.fit(scaled_features_for_viz)
+                    inertias.append(kmeans.inertia_)
+                except ValueError as e:
+                    # Menangkap error jika k terlalu besar untuk jumlah sampel
+                    st.warning(f"Tidak dapat menghitung K-Means untuk k={k} karena jumlah sampel tidak mencukupi atau masalah lain: {e}. Membatalkan perhitungan Elbow Method untuk k selanjutnya.")
+                    break # Keluar dari loop karena tidak bisa melanjutkan perhitungan
+                except Exception as e:
+                    # Menangkap error tak terduga lainnya
+                    st.warning(f"Terjadi kesalahan tak terduga saat menghitung K-Means untuk k={k}: {e}. Membatalkan perhitungan Elbow Method.")
+                    break
+
+            # Membuat plot Elbow Method hanya jika inersia berhasil dihitung dan ada titik untuk diplot
+            if len(inertias) > 0:
+                # Pastikan K_range dan inertias memiliki panjang yang sama untuk plotting
+                K_to_plot = list(K_range)[:len(inertias)] # Konversi K_range ke list jika perlu
+                
+                fig_elbow, ax_elbow = plt.subplots(figsize=(10, 6))
+                ax_elbow.plot(K_to_plot, inertias, marker='o') 
+                ax_elbow.set_title('Elbow Method untuk Penentuan Jumlah Kluster Optimal')
+                ax_elbow.set_xlabel('Jumlah Kluster (K)')
+                ax_elbow.set_ylabel('Inersia (Sum of Squared Distances)')
+                ax_elbow.grid(True)
+                st.pyplot(fig_elbow)
+                plt.close(fig_elbow)
+            else:
+                st.warning("Tidak dapat menghitung inersia untuk Elbow Method. Data mungkin terlalu kecil atau ada masalah selama perhitungan.")
         else:
-            st.warning("Data untuk Elbow Method mengandung nilai NaN atau kosong setelah scaling. Tidak dapat menampilkan grafik.")
+            st.warning("Data untuk Elbow Method kosong atau mengandung nilai NaN. Tidak dapat menampilkan grafik.")
         # --- AKHIR PENAMBAHAN BARU ---
 
 
